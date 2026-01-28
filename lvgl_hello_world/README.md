@@ -36,6 +36,23 @@ west flash
 - Fonts are enabled in `prj.conf`. The demo uses `lv_font_montserrat_28`.
 - LVGL label and animation settings are in `src/main.c`.
 
+## Simulation
+- Validated on Linux (Ubuntu 24.04.3 Desktop).
+- Enable following options in `prj.conf`
+    ```
+    CONFIG_INPUT=y
+    CONFIG_INPUT_SDL_TOUCH=y
+    ```
+- Build the sample for native simulator using `native_sim/native/64` as a build target.
+    ```sh
+    west build -b native_sim/native/64 -p auto
+    ```
+- Run zephyr.exe
+    ```sh
+    ./zephyr.exe
+    ```  
+- Screen pops up and reacts to user touch input, i.e. mouse click.
+
 ## Troubleshooting
 - If the screen stays blank, confirm your display driver and board overlays.
 - If touch does not work, verify the touch controller device tree bindings.
