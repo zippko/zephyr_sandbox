@@ -2,6 +2,7 @@
 
 ## Purpose
 Simple touch-controlled Snake game built with LVGL on Zephyr RTOS.
+
 ![Demo](assets/demo_lvlg_snake_game.gif)
 
 ## Environment
