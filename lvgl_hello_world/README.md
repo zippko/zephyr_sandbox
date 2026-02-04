@@ -3,6 +3,7 @@
 ## Purpose
 Demonstrate LVGL usage in Zephyr on a touch display. The demo shows a "Hello World"
 label with a fade-in/out animation and randomizes the text color on touch.
+![Screenshot](assets/screenshot_lvgl_h_w.jpg)
 
 ## Environment
 | Tool                 | Version |
