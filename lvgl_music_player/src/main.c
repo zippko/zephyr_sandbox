@@ -100,19 +100,15 @@ static void play_icon_event_cb(lv_event_t *e)
 			  is_playing ? LV_SYMBOL_PAUSE : LV_SYMBOL_PLAY);
 }
 
-static void next_song_event_cb(lv_event_t *e)
+static void skip_to_next_song(void)
 {
-	ARG_UNUSED(e);
-
 	current_song_index = (current_song_index + 1U) % ARRAY_SIZE(songs);
 	update_song_labels();
 	reset_song_progress();
 }
 
-static void prev_song_event_cb(lv_event_t *e)
+static void skip_to_prev_song(void)
 {
-	ARG_UNUSED(e);
-
 	if (current_song_index == 0U) {
 		current_song_index = ARRAY_SIZE(songs) - 1U;
 	} else {
@@ -123,6 +119,39 @@ static void prev_song_event_cb(lv_event_t *e)
 	reset_song_progress();
 }
 
+static void next_song_event_cb(lv_event_t *e)
+{
+	ARG_UNUSED(e);
+
+	skip_to_next_song();
+}
+
+static void prev_song_event_cb(lv_event_t *e)
+{
+	ARG_UNUSED(e);
+
+	skip_to_prev_song();
+}
+
+static void screen_gesture_event_cb(lv_event_t *e)
+{
+	lv_indev_t *indev = lv_indev_active();
+	lv_dir_t gesture_dir;
+
+	ARG_UNUSED(e);
+
+	if (indev == NULL) {
+		return;
+	}
+
+	gesture_dir = lv_indev_get_gesture_dir(indev);
+	if (gesture_dir == LV_DIR_LEFT) {
+		skip_to_next_song();
+	} else if (gesture_dir == LV_DIR_RIGHT) {
+		skip_to_prev_song();
+	}
+}
+
 static void create_music_player_screen(void)
 {
 	lv_obj_t *scr = lv_screen_active();
@@ -131,12 +160,14 @@ static void create_music_player_screen(void)
 	lv_obj_set_style_bg_grad_color(scr, lv_color_hex(0x000000), LV_PART_MAIN);
 	lv_obj_set_style_bg_grad_dir(scr, LV_GRAD_DIR_NONE, LV_PART_MAIN);
 	lv_obj_set_style_border_width(scr, 0, LV_PART_MAIN);
+	lv_obj_add_event_cb(scr, screen_gesture_event_cb, LV_EVENT_GESTURE, NULL);
 
 	lv_obj_t *bg_img = lv_image_create(scr);
 	lv_image_set_src(bg_img, &picture1_bg);
 	lv_obj_set_size(bg_img, lv_pct(100), lv_pct(100));
 	lv_image_set_inner_align(bg_img, LV_IMAGE_ALIGN_COVER);
 	lv_obj_set_style_image_opa(bg_img, LV_OPA_50, LV_PART_MAIN);
+	lv_obj_add_flag(bg_img, LV_OBJ_FLAG_GESTURE_BUBBLE);
 	lv_obj_center(bg_img);
 
 	progress_arc = lv_arc_create(scr);
@@ -154,11 +185,13 @@ static void create_music_player_screen(void)
 			       LV_PART_INDICATOR);
 	lv_obj_set_style_arc_rounded(progress_arc, true, LV_PART_INDICATOR);
 	lv_obj_set_style_bg_opa(progress_arc, LV_OPA_TRANSP, LV_PART_KNOB);
+	lv_obj_add_flag(progress_arc, LV_OBJ_FLAG_GESTURE_BUBBLE);
 	lv_obj_remove_flag(progress_arc, LV_OBJ_FLAG_CLICKABLE);
 
 	title_label = lv_label_create(scr);
 	lv_obj_set_style_text_font(title_label, &lv_font_montserrat_16, LV_PART_MAIN);
 	lv_obj_set_style_text_color(title_label, lv_color_hex(0xF0F4F8), LV_PART_MAIN);
+	lv_obj_add_flag(title_label, LV_OBJ_FLAG_GESTURE_BUBBLE);
 	lv_obj_align(title_label, LV_ALIGN_CENTER, 0, -15);
 
 	artist_label = lv_label_create(scr);
@@ -166,6 +199,7 @@ static void create_music_player_screen(void)
 				   LV_PART_MAIN);
 	lv_obj_set_style_text_color(artist_label, lv_color_hex(0x9BB3C9),
 				    LV_PART_MAIN);
+	lv_obj_add_flag(artist_label, LV_OBJ_FLAG_GESTURE_BUBBLE);
 	lv_obj_align_to(artist_label, title_label, LV_ALIGN_OUT_BOTTOM_MID, 0, 1);
 	play_icon_label = lv_label_create(scr);
 	lv_label_set_text(play_icon_label, LV_SYMBOL_PLAY);
@@ -173,6 +207,7 @@ static void create_music_player_screen(void)
 				   LV_PART_MAIN);
 	lv_obj_set_style_text_color(play_icon_label, lv_color_hex(0xE7EEFF),
 				    LV_PART_MAIN);
+	lv_obj_add_flag(play_icon_label, LV_OBJ_FLAG_GESTURE_BUBBLE);
 	lv_obj_align(play_icon_label, LV_ALIGN_CENTER, 0, 37);
 	lv_obj_add_flag(play_icon_label, LV_OBJ_FLAG_CLICKABLE);
 	lv_obj_add_event_cb(play_icon_label, play_icon_event_cb, LV_EVENT_CLICKED,
@@ -184,6 +219,7 @@ static void create_music_player_screen(void)
 				   LV_PART_MAIN);
 	lv_obj_set_style_text_color(next_icon_label, lv_color_hex(0xE7EEFF),
 				    LV_PART_MAIN);
+	lv_obj_add_flag(next_icon_label, LV_OBJ_FLAG_GESTURE_BUBBLE);
 	lv_obj_align_to(next_icon_label, play_icon_label, LV_ALIGN_OUT_RIGHT_MID, 24,
 			0);
 	lv_obj_add_flag(next_icon_label, LV_OBJ_FLAG_CLICKABLE);
@@ -196,6 +232,7 @@ static void create_music_player_screen(void)
 				   LV_PART_MAIN);
 	lv_obj_set_style_text_color(prev_icon_label, lv_color_hex(0xE7EEFF),
 				    LV_PART_MAIN);
+	lv_obj_add_flag(prev_icon_label, LV_OBJ_FLAG_GESTURE_BUBBLE);
 	lv_obj_align_to(prev_icon_label, play_icon_label, LV_ALIGN_OUT_LEFT_MID, -24,
 			0);
 	lv_obj_add_flag(prev_icon_label, LV_OBJ_FLAG_CLICKABLE);
@@ -208,12 +245,14 @@ static void create_music_player_screen(void)
 			     LV_PART_MAIN);
 	lv_obj_set_style_text_color(elapsed_label, lv_color_hex(0xDCE8F2),
 			      LV_PART_MAIN);
+	lv_obj_add_flag(elapsed_label, LV_OBJ_FLAG_GESTURE_BUBBLE);
 	lv_obj_align(elapsed_label, LV_ALIGN_BOTTOM_MID, -22, -38);
 
 	lv_obj_t *separator = lv_label_create(scr);
 	lv_label_set_text(separator, "|");
 	lv_obj_set_style_text_font(separator, &lv_font_montserrat_14, LV_PART_MAIN);
 	lv_obj_set_style_text_color(separator, lv_color_hex(0xDCE8F2), LV_PART_MAIN);
+	lv_obj_add_flag(separator, LV_OBJ_FLAG_GESTURE_BUBBLE);
 	lv_obj_align(separator, LV_ALIGN_BOTTOM_MID, 0, -38);
 
 	duration_label = lv_label_create(scr);
@@ -222,6 +261,7 @@ static void create_music_player_screen(void)
 			     LV_PART_MAIN);
 	lv_obj_set_style_text_color(duration_label, lv_color_hex(0xDCE8F2),
 			      LV_PART_MAIN);
+	lv_obj_add_flag(duration_label, LV_OBJ_FLAG_GESTURE_BUBBLE);
 	lv_obj_align(duration_label, LV_ALIGN_BOTTOM_MID, 22, -38);
 
 	update_song_labels();
