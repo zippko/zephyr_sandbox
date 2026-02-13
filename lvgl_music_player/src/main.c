@@ -21,6 +21,7 @@ static const struct pwm_dt_spec backlight =
 
 #define PROGRESS_MAX 100
 #define TIMER_PERIOD_MS 1000
+#define SONG_FADE_MS 160
 static lv_obj_t *progress_arc;
 static lv_obj_t *elapsed_label;
 static lv_obj_t *play_icon_label;
@@ -46,6 +47,9 @@ static const struct song_info songs[] = {
 static uint32_t elapsed_sec;
 static size_t current_song_index;
 static bool is_playing;
+static bool song_change_animating;
+static int32_t queued_song_steps;
+static int8_t active_song_step;
 
 static void update_progress_label(uint32_t sec)
 {
@@ -71,6 +75,83 @@ static void reset_song_progress(void)
 	elapsed_sec = 0U;
 	lv_arc_set_value(progress_arc, 0);
 	update_progress_label(0U);
+}
+
+static void apply_song_step(int8_t step)
+{
+	if (step > 0) {
+		current_song_index = (current_song_index + 1U) % ARRAY_SIZE(songs);
+	} else if (step < 0) {
+		if (current_song_index == 0U) {
+			current_song_index = ARRAY_SIZE(songs) - 1U;
+		} else {
+			current_song_index--;
+		}
+	}
+
+	update_song_labels();
+	reset_song_progress();
+}
+
+static void song_fade_exec_cb(void *var, int32_t v)
+{
+	ARG_UNUSED(var);
+
+	lv_obj_set_style_text_opa(title_label, (lv_opa_t)v, LV_PART_MAIN);
+	lv_obj_set_style_text_opa(artist_label, (lv_opa_t)v, LV_PART_MAIN);
+}
+
+static void start_song_change_animation(void);
+
+static void song_fade_in_ready_cb(lv_anim_t *a)
+{
+	ARG_UNUSED(a);
+
+	song_change_animating = false;
+	start_song_change_animation();
+}
+
+static void song_fade_out_ready_cb(lv_anim_t *a)
+{
+	lv_anim_t fade_in_anim;
+
+	ARG_UNUSED(a);
+
+	apply_song_step(active_song_step);
+
+	lv_anim_init(&fade_in_anim);
+	lv_anim_set_var(&fade_in_anim, NULL);
+	lv_anim_set_values(&fade_in_anim, LV_OPA_TRANSP, LV_OPA_COVER);
+	lv_anim_set_time(&fade_in_anim, SONG_FADE_MS);
+	lv_anim_set_exec_cb(&fade_in_anim, song_fade_exec_cb);
+	lv_anim_set_ready_cb(&fade_in_anim, song_fade_in_ready_cb);
+	lv_anim_start(&fade_in_anim);
+}
+
+static void start_song_change_animation(void)
+{
+	lv_anim_t fade_out_anim;
+
+	if (song_change_animating || queued_song_steps == 0) {
+		return;
+	}
+
+	song_change_animating = true;
+	if (queued_song_steps > 0) {
+		active_song_step = 1;
+		queued_song_steps--;
+	} else {
+		active_song_step = -1;
+		queued_song_steps++;
+	}
+
+	lv_anim_init(&fade_out_anim);
+	lv_anim_set_var(&fade_out_anim, NULL);
+	lv_anim_set_values(&fade_out_anim, LV_OPA_COVER, LV_OPA_TRANSP);
+	lv_anim_set_time(&fade_out_anim, SONG_FADE_MS);
+	lv_anim_set_exec_cb(&fade_out_anim, song_fade_exec_cb);
+	lv_anim_set_ready_cb(&fade_out_anim, song_fade_out_ready_cb);
+	lv_anim_start(&fade_out_anim);
 }
 
 static void progress_timer_cb(lv_timer_t *timer)
@@ -102,21 +183,14 @@ static void play_icon_event_cb(lv_event_t *e)
 
 static void skip_to_next_song(void)
 {
-	current_song_index = (current_song_index + 1U) % ARRAY_SIZE(songs);
-	update_song_labels();
-	reset_song_progress();
+	queued_song_steps++;
+	start_song_change_animation();
 }
 
 static void skip_to_prev_song(void)
 {
-	if (current_song_index == 0U) {
-		current_song_index = ARRAY_SIZE(songs) - 1U;
-	} else {
-		current_song_index--;
-	}
-
-	update_song_labels();
-	reset_song_progress();
+	queued_song_steps--;
+	start_song_change_animation();
 }
 
 static void next_song_event_cb(lv_event_t *e)
