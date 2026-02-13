@@ -22,12 +22,17 @@ static const struct pwm_dt_spec backlight =
 #define PROGRESS_MAX 100
 #define TIMER_PERIOD_MS 1000
 #define SONG_FADE_MS 160
+#define VOLUME_SWIPE_STEP_PX 8
+#define VOLUME_STEP_PERCENT 5U
+#define VOLUME_HOLD_ENABLE_DELAY_MS 1200
 static lv_obj_t *progress_arc;
 static lv_obj_t *elapsed_label;
 static lv_obj_t *play_icon_label;
 static lv_obj_t *title_label;
 static lv_obj_t *artist_label;
 static lv_obj_t *duration_label;
+static lv_obj_t *volume_overlay;
+static lv_obj_t *volume_label;
 LV_IMAGE_DECLARE(picture1_bg);
 
 struct song_info {
@@ -50,6 +55,10 @@ static bool is_playing;
 static bool song_change_animating;
 static int32_t queued_song_steps;
 static int8_t active_song_step;
+static uint8_t volume_percent = 70U;
+static bool volume_hold_active;
+static int16_t volume_hold_last_y;
+static int64_t volume_hold_enable_at_ms;
 
 static void update_progress_label(uint32_t sec)
 {
@@ -99,6 +108,93 @@ static void song_fade_exec_cb(void *var, int32_t v)
 
 	lv_obj_set_style_text_opa(title_label, (lv_opa_t)v, LV_PART_MAIN);
 	lv_obj_set_style_text_opa(artist_label, (lv_opa_t)v, LV_PART_MAIN);
+}
+
+static void show_volume_overlay(void)
+{
+	lv_label_set_text_fmt(volume_label, "%u%%", volume_percent);
+	lv_obj_clear_flag(volume_overlay, LV_OBJ_FLAG_HIDDEN);
+	lv_obj_move_foreground(volume_overlay);
+}
+
+static void hide_volume_overlay(void)
+{
+	lv_obj_add_flag(volume_overlay, LV_OBJ_FLAG_HIDDEN);
+}
+
+static void hold_volume_event_cb(lv_event_t *e)
+{
+	lv_indev_t *indev = lv_indev_active();
+	lv_point_t p;
+	int16_t dy;
+
+	switch (lv_event_get_code(e)) {
+	case LV_EVENT_LONG_PRESSED:
+		if (k_uptime_get() < volume_hold_enable_at_ms) {
+			break;
+		}
+		show_volume_overlay();
+		volume_hold_active = true;
+		if (indev != NULL) {
+			lv_indev_get_point(indev, &p);
+			volume_hold_last_y = p.y;
+		}
+		break;
+	case LV_EVENT_PRESSING:
+		if (!volume_hold_active || indev == NULL) {
+			break;
+		}
+
+		lv_indev_get_point(indev, &p);
+		dy = p.y - volume_hold_last_y;
+
+		while (dy <= -VOLUME_SWIPE_STEP_PX) {
+			if (volume_percent < 100U) {
+				volume_percent = MIN((uint8_t)(volume_percent +
+							    VOLUME_STEP_PERCENT),
+						    100U);
+				show_volume_overlay();
+			}
+			volume_hold_last_y -= VOLUME_SWIPE_STEP_PX;
+			dy += VOLUME_SWIPE_STEP_PX;
+		}
+
+		while (dy >= VOLUME_SWIPE_STEP_PX) {
+			if (volume_percent > 0U) {
+				if (volume_percent > VOLUME_STEP_PERCENT) {
+					volume_percent -= VOLUME_STEP_PERCENT;
+				} else {
+					volume_percent = 0U;
+				}
+				show_volume_overlay();
+			}
+			volume_hold_last_y += VOLUME_SWIPE_STEP_PX;
+			dy -= VOLUME_SWIPE_STEP_PX;
+		}
+		break;
+	case LV_EVENT_RELEASED:
+		volume_hold_active = false;
+		hide_volume_overlay();
+		break;
+	case LV_EVENT_PRESS_LOST:
+		if (indev != NULL && lv_indev_get_state(indev) == LV_INDEV_STATE_PRESSED) {
+			break;
+		}
+		volume_hold_active = false;
+		hide_volume_overlay();
+		break;
+	default:
+		break;
+	}
+}
+
+static void add_hold_volume_events(lv_obj_t *obj)
+{
+	lv_obj_add_event_cb(obj, hold_volume_event_cb, LV_EVENT_LONG_PRESSED,
+			    NULL);
+	lv_obj_add_event_cb(obj, hold_volume_event_cb, LV_EVENT_PRESSING, NULL);
+	lv_obj_add_event_cb(obj, hold_volume_event_cb, LV_EVENT_RELEASED, NULL);
+	lv_obj_add_event_cb(obj, hold_volume_event_cb, LV_EVENT_PRESS_LOST, NULL);
 }
 
 static void start_song_change_animation(void);
@@ -235,6 +331,7 @@ static void create_music_player_screen(void)
 	lv_obj_set_style_bg_grad_dir(scr, LV_GRAD_DIR_NONE, LV_PART_MAIN);
 	lv_obj_set_style_border_width(scr, 0, LV_PART_MAIN);
 	lv_obj_add_event_cb(scr, screen_gesture_event_cb, LV_EVENT_GESTURE, NULL);
+	add_hold_volume_events(scr);
 
 	lv_obj_t *bg_img = lv_image_create(scr);
 	lv_image_set_src(bg_img, &picture1_bg);
@@ -243,6 +340,7 @@ static void create_music_player_screen(void)
 	lv_obj_set_style_image_opa(bg_img, LV_OPA_50, LV_PART_MAIN);
 	lv_obj_add_flag(bg_img, LV_OBJ_FLAG_GESTURE_BUBBLE);
 	lv_obj_center(bg_img);
+	add_hold_volume_events(bg_img);
 
 	progress_arc = lv_arc_create(scr);
 	lv_obj_set_size(progress_arc, 214, 214);
@@ -261,12 +359,14 @@ static void create_music_player_screen(void)
 	lv_obj_set_style_bg_opa(progress_arc, LV_OPA_TRANSP, LV_PART_KNOB);
 	lv_obj_add_flag(progress_arc, LV_OBJ_FLAG_GESTURE_BUBBLE);
 	lv_obj_remove_flag(progress_arc, LV_OBJ_FLAG_CLICKABLE);
+	add_hold_volume_events(progress_arc);
 
 	title_label = lv_label_create(scr);
 	lv_obj_set_style_text_font(title_label, &lv_font_montserrat_16, LV_PART_MAIN);
 	lv_obj_set_style_text_color(title_label, lv_color_hex(0xF0F4F8), LV_PART_MAIN);
 	lv_obj_add_flag(title_label, LV_OBJ_FLAG_GESTURE_BUBBLE);
 	lv_obj_align(title_label, LV_ALIGN_CENTER, 0, -15);
+	add_hold_volume_events(title_label);
 
 	artist_label = lv_label_create(scr);
 	lv_obj_set_style_text_font(artist_label, &lv_font_montserrat_14,
@@ -275,6 +375,7 @@ static void create_music_player_screen(void)
 				    LV_PART_MAIN);
 	lv_obj_add_flag(artist_label, LV_OBJ_FLAG_GESTURE_BUBBLE);
 	lv_obj_align_to(artist_label, title_label, LV_ALIGN_OUT_BOTTOM_MID, 0, 1);
+	add_hold_volume_events(artist_label);
 	play_icon_label = lv_label_create(scr);
 	lv_label_set_text(play_icon_label, LV_SYMBOL_PLAY);
 	lv_obj_set_style_text_font(play_icon_label, &lv_font_montserrat_28,
@@ -286,6 +387,7 @@ static void create_music_player_screen(void)
 	lv_obj_add_flag(play_icon_label, LV_OBJ_FLAG_CLICKABLE);
 	lv_obj_add_event_cb(play_icon_label, play_icon_event_cb, LV_EVENT_CLICKED,
 			    NULL);
+	add_hold_volume_events(play_icon_label);
 
 	lv_obj_t *next_icon_label = lv_label_create(scr);
 	lv_label_set_text(next_icon_label, LV_SYMBOL_NEXT);
@@ -299,6 +401,7 @@ static void create_music_player_screen(void)
 	lv_obj_add_flag(next_icon_label, LV_OBJ_FLAG_CLICKABLE);
 	lv_obj_add_event_cb(next_icon_label, next_song_event_cb, LV_EVENT_CLICKED,
 			    NULL);
+	add_hold_volume_events(next_icon_label);
 
 	lv_obj_t *prev_icon_label = lv_label_create(scr);
 	lv_label_set_text(prev_icon_label, LV_SYMBOL_PREV);
@@ -312,6 +415,7 @@ static void create_music_player_screen(void)
 	lv_obj_add_flag(prev_icon_label, LV_OBJ_FLAG_CLICKABLE);
 	lv_obj_add_event_cb(prev_icon_label, prev_song_event_cb, LV_EVENT_CLICKED,
 			    NULL);
+	add_hold_volume_events(prev_icon_label);
 
 	elapsed_label = lv_label_create(scr);
 	lv_label_set_text(elapsed_label, "0:00");
@@ -321,6 +425,7 @@ static void create_music_player_screen(void)
 			      LV_PART_MAIN);
 	lv_obj_add_flag(elapsed_label, LV_OBJ_FLAG_GESTURE_BUBBLE);
 	lv_obj_align(elapsed_label, LV_ALIGN_BOTTOM_MID, -22, -38);
+	add_hold_volume_events(elapsed_label);
 
 	lv_obj_t *separator = lv_label_create(scr);
 	lv_label_set_text(separator, "|");
@@ -328,6 +433,7 @@ static void create_music_player_screen(void)
 	lv_obj_set_style_text_color(separator, lv_color_hex(0xDCE8F2), LV_PART_MAIN);
 	lv_obj_add_flag(separator, LV_OBJ_FLAG_GESTURE_BUBBLE);
 	lv_obj_align(separator, LV_ALIGN_BOTTOM_MID, 0, -38);
+	add_hold_volume_events(separator);
 
 	duration_label = lv_label_create(scr);
 	lv_label_set_text(duration_label, "3:00");
@@ -337,10 +443,36 @@ static void create_music_player_screen(void)
 			      LV_PART_MAIN);
 	lv_obj_add_flag(duration_label, LV_OBJ_FLAG_GESTURE_BUBBLE);
 	lv_obj_align(duration_label, LV_ALIGN_BOTTOM_MID, 22, -38);
+	add_hold_volume_events(duration_label);
+
+	volume_overlay = lv_obj_create(scr);
+	lv_obj_set_size(volume_overlay, 88, 88);
+	lv_obj_align(volume_overlay, LV_ALIGN_CENTER, 0, -4);
+	lv_obj_set_style_radius(volume_overlay, LV_RADIUS_CIRCLE, LV_PART_MAIN);
+	lv_obj_set_style_bg_color(volume_overlay, lv_color_hex(0x000000),
+				  LV_PART_MAIN);
+	lv_obj_set_style_bg_opa(volume_overlay, LV_OPA_70, LV_PART_MAIN);
+	lv_obj_set_style_border_width(volume_overlay, 2, LV_PART_MAIN);
+	lv_obj_set_style_border_color(volume_overlay, lv_color_hex(0xE7EEFF),
+				      LV_PART_MAIN);
+	lv_obj_set_style_pad_all(volume_overlay, 0, LV_PART_MAIN);
+	lv_obj_remove_flag(volume_overlay, LV_OBJ_FLAG_SCROLLABLE);
+	lv_obj_add_flag(volume_overlay, LV_OBJ_FLAG_HIDDEN);
+	lv_obj_add_flag(volume_overlay, LV_OBJ_FLAG_IGNORE_LAYOUT);
+	add_hold_volume_events(volume_overlay);
+
+	volume_label = lv_label_create(volume_overlay);
+	lv_obj_set_style_text_font(volume_label, &lv_font_montserrat_16,
+				   LV_PART_MAIN);
+	lv_obj_set_style_text_color(volume_label, lv_color_hex(0xE7EEFF),
+				    LV_PART_MAIN);
+	lv_obj_center(volume_label);
+	add_hold_volume_events(volume_label);
 
 	update_song_labels();
 	reset_song_progress();
 	lv_timer_create(progress_timer_cb, TIMER_PERIOD_MS, NULL);
+	volume_hold_enable_at_ms = k_uptime_get() + VOLUME_HOLD_ENABLE_DELAY_MS;
 }
 
 int main(void)
