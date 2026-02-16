@@ -10,6 +10,19 @@
 #include <lvgl.h>
 #include <lvgl_zephyr.h>
 #include <stdbool.h>
+#include <errno.h>
+
+#if __has_include(<bluetooth/services/hids.h>)
+#define HAS_NRF_HIDS 1
+#include <zephyr/settings/settings.h>
+#include <zephyr/bluetooth/bluetooth.h>
+#include <zephyr/bluetooth/conn.h>
+#include <zephyr/bluetooth/hci.h>
+#include <zephyr/bluetooth/uuid.h>
+#include <bluetooth/services/hids.h>
+#else
+#define HAS_NRF_HIDS 0
+#endif
 
 LOG_MODULE_REGISTER(lvgl_music_player, LOG_LEVEL_INF);
 
@@ -25,6 +38,44 @@ static const struct pwm_dt_spec backlight =
 #define VOLUME_SWIPE_STEP_PX 8
 #define VOLUME_STEP_PERCENT 5U
 #define VOLUME_HOLD_ENABLE_DELAY_MS 1200
+#define GESTURE_RATE_LIMIT_MS 350
+static bool bluetooth_ready;
+
+#if HAS_NRF_HIDS
+#define OUTPUT_REPORT_MAX_LEN 0
+#define INPUT_REP_MEDIA_REF_ID 1
+#define INPUT_REPORT_MEDIA_MAX_LEN 2
+#define HID_CONSUMER_PLAY 0x00B0
+#define HID_CONSUMER_PAUSE 0x00B1
+#define HID_CONSUMER_SCAN_NEXT 0x00B5
+#define HID_CONSUMER_SCAN_PREV 0x00B6
+
+enum {
+	INPUT_REP_MEDIA_IDX = 0
+};
+
+BT_HIDS_DEF(hids_obj, OUTPUT_REPORT_MAX_LEN, INPUT_REPORT_MEDIA_MAX_LEN);
+
+static const struct bt_data ad[] = {
+	BT_DATA_BYTES(BT_DATA_GAP_APPEARANCE,
+		      (CONFIG_BT_DEVICE_APPEARANCE >> 0) & 0xff,
+		      (CONFIG_BT_DEVICE_APPEARANCE >> 8) & 0xff),
+	BT_DATA_BYTES(BT_DATA_FLAGS, (BT_LE_AD_GENERAL | BT_LE_AD_NO_BREDR)),
+	BT_DATA_BYTES(BT_DATA_UUID16_ALL, BT_UUID_16_ENCODE(BT_UUID_HIDS_VAL)),
+};
+
+static const struct bt_data sd[] = {
+	BT_DATA(BT_DATA_NAME_COMPLETE, CONFIG_BT_DEVICE_NAME,
+		sizeof(CONFIG_BT_DEVICE_NAME) - 1),
+};
+
+struct conn_mode {
+	struct bt_conn *conn;
+	bool reserved;
+};
+
+static struct conn_mode conn_mode[CONFIG_BT_HIDS_MAX_CLIENT_COUNT];
+
 static lv_obj_t *progress_arc;
 static lv_obj_t *elapsed_label;
 static lv_obj_t *play_icon_label;
@@ -59,6 +110,230 @@ static uint8_t volume_percent = 70U;
 static bool volume_hold_active;
 static int16_t volume_hold_last_y;
 static int64_t volume_hold_enable_at_ms;
+static int64_t last_gesture_action_ms;
+
+static int send_media_command(bool play);
+
+static int advertising_start(void)
+{
+	int err;
+	const struct bt_le_adv_param *adv_param = BT_LE_ADV_PARAM(
+		BT_LE_ADV_OPT_CONN, BT_GAP_ADV_FAST_INT_MIN_2,
+		BT_GAP_ADV_FAST_INT_MAX_2, NULL);
+
+	err = bt_le_adv_start(adv_param, ad, ARRAY_SIZE(ad), sd, ARRAY_SIZE(sd));
+	if (err && err != -EALREADY) {
+		LOG_ERR("Advertising failed (err %d)", err);
+		return err;
+	}
+
+	LOG_INF("Advertising started");
+	return 0;
+}
+
+static void connected(struct bt_conn *conn, uint8_t err)
+{
+	char addr[BT_ADDR_LE_STR_LEN];
+
+	bt_addr_le_to_str(bt_conn_get_dst(conn), addr, sizeof(addr));
+
+	if (err) {
+		LOG_WRN("Connect failed to %s (0x%02x)", addr, err);
+		return;
+	}
+
+	for (size_t i = 0; i < CONFIG_BT_HIDS_MAX_CLIENT_COUNT; i++) {
+		if (!conn_mode[i].conn) {
+			conn_mode[i].conn = conn;
+			conn_mode[i].reserved = false;
+			break;
+		}
+	}
+
+	err = bt_hids_connected(&hids_obj, conn);
+	if (err) {
+		LOG_WRN("bt_hids_connected failed (err %d)", err);
+	}
+
+	LOG_INF("Connected %s", addr);
+}
+
+static void disconnected(struct bt_conn *conn, uint8_t reason)
+{
+	int err;
+
+	for (size_t i = 0; i < CONFIG_BT_HIDS_MAX_CLIENT_COUNT; i++) {
+		if (conn_mode[i].conn == conn) {
+			conn_mode[i].conn = NULL;
+			conn_mode[i].reserved = false;
+			break;
+		}
+	}
+
+	err = bt_hids_disconnected(&hids_obj, conn);
+	if (err) {
+		LOG_WRN("bt_hids_disconnected failed (err %d)", err);
+	}
+
+	LOG_INF("Disconnected (reason 0x%02x)", reason);
+	(void)advertising_start();
+}
+
+static void security_changed(struct bt_conn *conn, bt_security_t level,
+			     enum bt_security_err err)
+{
+	char addr[BT_ADDR_LE_STR_LEN];
+
+	bt_addr_le_to_str(bt_conn_get_dst(conn), addr, sizeof(addr));
+	if (err) {
+		LOG_WRN("Security failed for %s level %u err %d", addr, level, err);
+	} else {
+		LOG_INF("Security changed for %s level %u", addr, level);
+	}
+}
+
+BT_CONN_CB_DEFINE(conn_callbacks) = {
+	.connected = connected,
+	.disconnected = disconnected,
+	.security_changed = security_changed,
+};
+
+static void hids_pm_evt_handler(enum bt_hids_pm_evt evt,
+				struct bt_conn *conn)
+{
+	ARG_UNUSED(evt);
+	ARG_UNUSED(conn);
+}
+
+static void hid_init(void)
+{
+	int err;
+	struct bt_hids_init_param hids_init_obj = { 0 };
+	struct bt_hids_inp_rep *hids_inp_rep;
+
+	static const uint8_t report_map[] = {
+		/* Consumer Control (Play/Pause). */
+		0x05, 0x0C,
+		0x09, 0x01,
+		0xA1, 0x01,
+		0x85, INPUT_REP_MEDIA_REF_ID,
+		0x15, 0x00,
+		0x26, 0xFF, 0x03,
+		0x19, 0x00,
+		0x2A, 0xFF, 0x03,
+		0x75, 0x10,
+		0x95, 0x01,
+		0x81, 0x00,
+		0xC0
+	};
+
+	hids_init_obj.rep_map.data = report_map;
+	hids_init_obj.rep_map.size = sizeof(report_map);
+	hids_init_obj.info.bcd_hid = 0x0101;
+	hids_init_obj.info.b_country_code = 0x00;
+	hids_init_obj.info.flags = (BT_HIDS_REMOTE_WAKE |
+				    BT_HIDS_NORMALLY_CONNECTABLE);
+
+	hids_inp_rep =
+		&hids_init_obj.inp_rep_group_init.reports[INPUT_REP_MEDIA_IDX];
+	hids_inp_rep->size = INPUT_REPORT_MEDIA_MAX_LEN;
+	hids_inp_rep->id = INPUT_REP_MEDIA_REF_ID;
+	hids_init_obj.inp_rep_group_init.cnt++;
+
+	hids_init_obj.is_kb = false;
+	hids_init_obj.is_mouse = false;
+	hids_init_obj.pm_evt_handler = hids_pm_evt_handler;
+
+	err = bt_hids_init(&hids_obj, &hids_init_obj);
+	if (err) {
+		LOG_ERR("HIDS init failed (err %d)", err);
+	} else {
+		LOG_INF("HIDS initialized");
+	}
+}
+
+static int send_consumer_usage(uint16_t usage)
+{
+	uint8_t report[INPUT_REPORT_MEDIA_MAX_LEN];
+	bool has_conn = false;
+	int err;
+
+	report[0] = (uint8_t)(usage & 0xFFU);
+	report[1] = (uint8_t)(usage >> 8);
+
+	for (size_t i = 0; i < CONFIG_BT_HIDS_MAX_CLIENT_COUNT; i++) {
+		if (!conn_mode[i].conn) {
+			continue;
+		}
+
+		has_conn = true;
+		err = bt_hids_inp_rep_send(&hids_obj, conn_mode[i].conn,
+					   INPUT_REP_MEDIA_IDX, report,
+					   sizeof(report), NULL);
+		if (err) {
+			return err;
+		}
+	}
+
+	if (!has_conn) {
+		return -ENOTCONN;
+	}
+
+	return 0;
+}
+
+static int send_media_command(bool play)
+{
+	uint16_t usage = play ? HID_CONSUMER_PLAY : HID_CONSUMER_PAUSE;
+	int err;
+
+	/* Press event. */
+	err = send_consumer_usage(usage);
+	if (err && err != -ENOTCONN) {
+		return err;
+	}
+
+	/* Release event. */
+	err = send_consumer_usage(0U);
+	if (err && err != -ENOTCONN) {
+		return err;
+	}
+
+	return 0;
+}
+
+static int send_media_usage_command(uint16_t usage)
+{
+	int err;
+
+	err = send_consumer_usage(usage);
+	if (err && err != -ENOTCONN) {
+		return err;
+	}
+
+	err = send_consumer_usage(0U);
+	if (err && err != -ENOTCONN) {
+		return err;
+	}
+
+	return 0;
+}
+
+#else
+
+static int send_media_command(bool play)
+{
+	ARG_UNUSED(play);
+	return -ENOTSUP;
+}
+
+static int send_media_usage_command(uint16_t usage)
+{
+	ARG_UNUSED(usage);
+	return -ENOTSUP;
+}
+
+#endif
 
 static void update_progress_label(uint32_t sec)
 {
@@ -270,23 +545,53 @@ static void progress_timer_cb(lv_timer_t *timer)
 
 static void play_icon_event_cb(lv_event_t *e)
 {
+	int err;
+
 	ARG_UNUSED(e);
 
 	is_playing = !is_playing;
 	lv_label_set_text(play_icon_label,
 			  is_playing ? LV_SYMBOL_PAUSE : LV_SYMBOL_PLAY);
+
+	if (bluetooth_ready) {
+		err = send_media_command(is_playing);
+		if (err) {
+			LOG_WRN("Failed to send HID media command '%s' (err %d)",
+				is_playing ? "play" : "pause", err);
+		}
+	}
 }
 
 static void skip_to_next_song(void)
 {
+	int err;
+
 	queued_song_steps++;
 	start_song_change_animation();
+
+	if (bluetooth_ready) {
+		err = send_media_usage_command(HID_CONSUMER_SCAN_NEXT);
+		if (err) {
+			LOG_WRN("Failed to send HID media command 'next' (err %d)",
+				err);
+		}
+	}
 }
 
 static void skip_to_prev_song(void)
 {
+	int err;
+
 	queued_song_steps--;
 	start_song_change_animation();
+
+	if (bluetooth_ready) {
+		err = send_media_usage_command(HID_CONSUMER_SCAN_PREV);
+		if (err) {
+			LOG_WRN("Failed to send HID media command 'previous' (err %d)",
+				err);
+		}
+	}
 }
 
 static void next_song_event_cb(lv_event_t *e)
@@ -307,6 +612,7 @@ static void screen_gesture_event_cb(lv_event_t *e)
 {
 	lv_indev_t *indev = lv_indev_active();
 	lv_dir_t gesture_dir;
+	int64_t now_ms;
 
 	ARG_UNUSED(e);
 
@@ -314,10 +620,17 @@ static void screen_gesture_event_cb(lv_event_t *e)
 		return;
 	}
 
+	now_ms = k_uptime_get();
+	if ((now_ms - last_gesture_action_ms) < GESTURE_RATE_LIMIT_MS) {
+		return;
+	}
+
 	gesture_dir = lv_indev_get_gesture_dir(indev);
 	if (gesture_dir == LV_DIR_LEFT) {
+		last_gesture_action_ms = now_ms;
 		skip_to_next_song();
 	} else if (gesture_dir == LV_DIR_RIGHT) {
+		last_gesture_action_ms = now_ms;
 		skip_to_prev_song();
 	}
 }
@@ -478,6 +791,7 @@ static void create_music_player_screen(void)
 int main(void)
 {
 	uint32_t backlight_period;
+	int err;
 
 	/* Turn on backlight if the board exposes it through pwm-leds. */
 	if (!device_is_ready(backlight.dev)) {
@@ -508,6 +822,29 @@ int main(void)
 	if (display_blanking_off(display_dev) != 0) {
 		LOG_WRN("Could not unblank display");
 	}
+
+#if HAS_NRF_HIDS
+	hid_init();
+
+	err = bt_enable(NULL);
+	if (err) {
+		LOG_ERR("Bluetooth init failed (err %d)", err);
+	} else {
+		bluetooth_ready = true;
+		LOG_INF("Bluetooth initialized");
+		if (IS_ENABLED(CONFIG_SETTINGS)) {
+			settings_load();
+		}
+
+		err = advertising_start();
+		if (err) {
+			LOG_WRN("Initial advertising start failed (err %d)", err);
+		}
+	}
+#else
+	ARG_UNUSED(err);
+	LOG_WRN("BLE HIDS is unavailable in this Zephyr workspace (missing nRF HIDS module)");
+#endif
 
 	lvgl_lock();
 	create_music_player_screen();

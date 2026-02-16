@@ -1,0 +1,13 @@
+# SPDX-License-Identifier: LicenseRef-Nordic-5-Clause
+
+menu "Local Nordic BLE HIDS"
+
+if BT
+
+rsource "subsys/bluetooth/Kconfig.pool"
+rsource "subsys/bluetooth/Kconfig.link"
+rsource "subsys/bluetooth/services/Kconfig"
+
+endif # BT
+
+endmenu

@@ -1,0 +1,12 @@
+# SPDX-License-Identifier: LicenseRef-Nordic-5-Clause
+
+menu "Bluetooth Services"
+
+config BT_NRF_SERVICES
+	bool
+	help
+	  Common Bluetooth GATT Services support modules.
+
+rsource "Kconfig.hids"
+
+endmenu
