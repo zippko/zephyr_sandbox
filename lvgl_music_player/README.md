@@ -67,6 +67,8 @@ west flash
   `modules/nrf_ble_hids` and enabled through `ZEPHYR_EXTRA_MODULES` in
   `CMakeLists.txt`.
 - BLE/HIDS Kconfig settings are applied from `prj_ncs_hids.conf`.
+- Bluetooth settings persistence uses NVS (`CONFIG_NVS=y`,
+  `CONFIG_SETTINGS_NVS=y`) on the board `storage_partition`.
 - Device appearance is set to Generic HID (`CONFIG_BT_DEVICE_APPEARANCE=960`)
   for Windows compatibility with consumer-control-only reports.
 - Consumer Control commands are relative actions (play, pause, next, previous,
