@@ -54,6 +54,15 @@ west flash
 - Previous icon also sends BLE HID Consumer Control `Scan Previous Track`.
 - Swipe gestures are rate-limited (350 ms) to avoid duplicate rapid media
   next/previous commands.
+- Long-press + vertical swipe sends BLE HID Consumer Control `Volume Up` /
+  `Volume Down` commands to the host.
+- Volume overlay appears immediately on long press, then shows `+` / `-`
+  while swipe steps are generating volume commands.
+- Volume overlay shows only `+` or `-` (no absolute percentage value).
+- Volume command sends are rate-limited (140 ms interval) to keep host volume
+  changes smooth and avoid command bursts.
+- During BLE pairing, passkey is shown in a centered on-screen overlay and is
+  hidden when pairing completes, fails, is canceled, or disconnects.
 - Each song has a unique duration (2:00 to 3:00 range, second resolution).
 - On track skip:
   - progress resets to `0:00`.
@@ -81,6 +90,22 @@ west flash
   - `CONFIG_BT_AUTO_PHY_UPDATE=n`
   - `CONFIG_BT_HIDS_DEFAULT_PERM_RW_ENCRYPT=y`
   - `CONFIG_BT_SETTINGS=y`
+- BLE auth callbacks are registered (`bt_conn_auth_cb_register`,
+  `bt_conn_auth_info_cb_register`) and numeric comparison passkey confirmation
+  is handled in firmware.
+- DIS is enabled with PnP ID metadata (`CONFIG_BT_DIS=y`) for host identity
+  information while keeping the profile focused on HIDS consumer control.
+- On security errors due stale host/device bond keys (for example
+  `PIN_OR_KEY_MISSING`), remove the device on Windows and re-pair.
+- Pairing recovery is host-driven (forget/re-pair on Windows). Automatic local
+  bond clearing is not used.
+- For stability on ESP32-S3, stack sizes were increased in
+  `prj_ncs_hids.conf`:
+  - `CONFIG_SYSTEM_WORKQUEUE_STACK_SIZE=4096`
+  - `CONFIG_BT_RX_STACK_SIZE=4096`
+- LVGL draw buffer alignment warnings were addressed by:
+  - `CONFIG_LV_ATTRIBUTE_MEM_ALIGN_SIZE=4` in `prj.conf`
+  - explicit image data alignment in `src/picture1_bg.c`
 
 ## Changelog-lite
 - Added embedded background image pipeline and 50% transparent image layer.
@@ -95,3 +120,6 @@ west flash
 - Added swipe gesture rate limit (350 ms) to reduce duplicate host media commands.
 - Added Bluetooth security-oriented Kconfig aligned with Nordic
   `peripheral_hids_keyboard`.
+- Added BLE auth callback flow and on-screen passkey overlay for pairing UX.
+- Updated volume UX: larger `+`/`-` indicator and immediate overlay on long press.
+- Removed stale auto-bond-clear documentation and aligned notes to current code.

@@ -1,7 +1,11 @@
 #include <lvgl.h>
 
 #ifndef LV_ATTRIBUTE_MEM_ALIGN
+#if defined(__GNUC__)
+#define LV_ATTRIBUTE_MEM_ALIGN __attribute__((aligned(4)))
+#else
 #define LV_ATTRIBUTE_MEM_ALIGN
+#endif
 #endif
 
 #ifndef LV_ATTRIBUTE_IMAGE_PICTURE1_BG

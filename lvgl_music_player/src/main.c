@@ -36,8 +36,8 @@ static const struct pwm_dt_spec backlight =
 #define TIMER_PERIOD_MS 1000
 #define SONG_FADE_MS 160
 #define VOLUME_SWIPE_STEP_PX 8
-#define VOLUME_STEP_PERCENT 5U
 #define VOLUME_HOLD_ENABLE_DELAY_MS 1200
+#define VOLUME_CMD_INTERVAL_MS 140
 #define GESTURE_RATE_LIMIT_MS 350
 static bool bluetooth_ready;
 
@@ -49,6 +49,8 @@ static bool bluetooth_ready;
 #define HID_CONSUMER_PAUSE 0x00B1
 #define HID_CONSUMER_SCAN_NEXT 0x00B5
 #define HID_CONSUMER_SCAN_PREV 0x00B6
+#define HID_CONSUMER_VOL_UP 0x00E9
+#define HID_CONSUMER_VOL_DOWN 0x00EA
 
 enum {
 	INPUT_REP_MEDIA_IDX = 0
@@ -75,6 +77,75 @@ struct conn_mode {
 };
 
 static struct conn_mode conn_mode[CONFIG_BT_HIDS_MAX_CLIENT_COUNT];
+static lv_obj_t *pairing_overlay;
+static lv_obj_t *pairing_passkey_label;
+static bool ui_ready;
+
+static void show_pairing_overlay(unsigned int passkey);
+static void hide_pairing_overlay(void);
+
+static void auth_passkey_display(struct bt_conn *conn, unsigned int passkey)
+{
+	char addr[BT_ADDR_LE_STR_LEN];
+
+	bt_addr_le_to_str(bt_conn_get_dst(conn), addr, sizeof(addr));
+	LOG_INF("Passkey for %s: %06u", addr, passkey);
+	show_pairing_overlay(passkey);
+}
+
+static void auth_passkey_confirm(struct bt_conn *conn, unsigned int passkey)
+{
+	char addr[BT_ADDR_LE_STR_LEN];
+	int err;
+
+	bt_addr_le_to_str(bt_conn_get_dst(conn), addr, sizeof(addr));
+	LOG_INF("Confirming passkey for %s: %06u", addr, passkey);
+	show_pairing_overlay(passkey);
+
+	err = bt_conn_auth_passkey_confirm(conn);
+	if (err) {
+		LOG_WRN("Passkey confirm failed (err %d)", err);
+	}
+}
+
+static void auth_cancel(struct bt_conn *conn)
+{
+	char addr[BT_ADDR_LE_STR_LEN];
+
+	bt_addr_le_to_str(bt_conn_get_dst(conn), addr, sizeof(addr));
+	LOG_WRN("Pairing cancelled: %s", addr);
+	hide_pairing_overlay();
+}
+
+static void pairing_complete(struct bt_conn *conn, bool bonded)
+{
+	char addr[BT_ADDR_LE_STR_LEN];
+
+	bt_addr_le_to_str(bt_conn_get_dst(conn), addr, sizeof(addr));
+	LOG_INF("Pairing completed: %s, bonded: %d", addr, bonded);
+	hide_pairing_overlay();
+}
+
+static void pairing_failed(struct bt_conn *conn, enum bt_security_err reason)
+{
+	char addr[BT_ADDR_LE_STR_LEN];
+
+	bt_addr_le_to_str(bt_conn_get_dst(conn), addr, sizeof(addr));
+	LOG_WRN("Pairing failed: %s, reason %d (%s)", addr, reason,
+		bt_security_err_to_str(reason));
+	hide_pairing_overlay();
+}
+
+static struct bt_conn_auth_cb conn_auth_callbacks = {
+	.passkey_display = auth_passkey_display,
+	.passkey_confirm = auth_passkey_confirm,
+	.cancel = auth_cancel,
+};
+
+static struct bt_conn_auth_info_cb conn_auth_info_callbacks = {
+	.pairing_complete = pairing_complete,
+	.pairing_failed = pairing_failed,
+};
 
 static lv_obj_t *progress_arc;
 static lv_obj_t *elapsed_label;
@@ -93,11 +164,11 @@ struct song_info {
 };
 
 static const struct song_info songs[] = {
-	{ "Midnight Tides", "Echo Harbor", 173U },
-	{ "City Lights", "Neon Valley", 149U },
-	{ "Drift Away", "The Shoreline", 132U },
-	{ "Sundown Drive", "Velvet Highway", 164U },
-	{ "Blue Horizon", "Skylane", 121U },
+	{ "Track One", "Echo Harbor", 173U },
+	{ "Track Two", "Echo Harbor", 149U },
+	{ "Track Three", "Echo Harbor", 132U },
+	{ "Track Four", "Echo Harbor", 164U },
+	{ "Track Five", "Echo Harbor", 121U },
 };
 
 static uint32_t elapsed_sec;
@@ -106,13 +177,37 @@ static bool is_playing;
 static bool song_change_animating;
 static int32_t queued_song_steps;
 static int8_t active_song_step;
-static uint8_t volume_percent = 70U;
 static bool volume_hold_active;
 static int16_t volume_hold_last_y;
 static int64_t volume_hold_enable_at_ms;
 static int64_t last_gesture_action_ms;
+static int64_t last_volume_cmd_ms;
 
 static int send_media_command(bool play);
+
+static void show_pairing_overlay(unsigned int passkey)
+{
+	if (!ui_ready || pairing_overlay == NULL || pairing_passkey_label == NULL) {
+		return;
+	}
+
+	lvgl_lock();
+	lv_label_set_text_fmt(pairing_passkey_label, "%06u", passkey);
+	lv_obj_clear_flag(pairing_overlay, LV_OBJ_FLAG_HIDDEN);
+	lv_obj_move_foreground(pairing_overlay);
+	lvgl_unlock();
+}
+
+static void hide_pairing_overlay(void)
+{
+	if (!ui_ready || pairing_overlay == NULL) {
+		return;
+	}
+
+	lvgl_lock();
+	lv_obj_add_flag(pairing_overlay, LV_OBJ_FLAG_HIDDEN);
+	lvgl_unlock();
+}
 
 static int advertising_start(void)
 {
@@ -162,6 +257,11 @@ static void disconnected(struct bt_conn *conn, uint8_t reason)
 {
 	int err;
 
+	err = bt_hids_disconnected(&hids_obj, conn);
+	if (err) {
+		LOG_WRN("bt_hids_disconnected failed (err %d)", err);
+	}
+
 	for (size_t i = 0; i < CONFIG_BT_HIDS_MAX_CLIENT_COUNT; i++) {
 		if (conn_mode[i].conn == conn) {
 			conn_mode[i].conn = NULL;
@@ -170,12 +270,8 @@ static void disconnected(struct bt_conn *conn, uint8_t reason)
 		}
 	}
 
-	err = bt_hids_disconnected(&hids_obj, conn);
-	if (err) {
-		LOG_WRN("bt_hids_disconnected failed (err %d)", err);
-	}
-
 	LOG_INF("Disconnected (reason 0x%02x)", reason);
+	hide_pairing_overlay();
 	(void)advertising_start();
 }
 
@@ -186,7 +282,8 @@ static void security_changed(struct bt_conn *conn, bt_security_t level,
 
 	bt_addr_le_to_str(bt_conn_get_dst(conn), addr, sizeof(addr));
 	if (err) {
-		LOG_WRN("Security failed for %s level %u err %d", addr, level, err);
+		LOG_WRN("Security failed for %s level %u err %d (%s)", addr, level,
+			err, bt_security_err_to_str(err));
 	} else {
 		LOG_INF("Security changed for %s level %u", addr, level);
 	}
@@ -385,9 +482,11 @@ static void song_fade_exec_cb(void *var, int32_t v)
 	lv_obj_set_style_text_opa(artist_label, (lv_opa_t)v, LV_PART_MAIN);
 }
 
-static void show_volume_overlay(void)
+static void show_volume_overlay(char symbol)
 {
-	lv_label_set_text_fmt(volume_label, "%u%%", volume_percent);
+	char text[2] = { symbol, '\0' };
+
+	lv_label_set_text(volume_label, text);
 	lv_obj_clear_flag(volume_overlay, LV_OBJ_FLAG_HIDDEN);
 	lv_obj_move_foreground(volume_overlay);
 }
@@ -402,14 +501,16 @@ static void hold_volume_event_cb(lv_event_t *e)
 	lv_indev_t *indev = lv_indev_active();
 	lv_point_t p;
 	int16_t dy;
+	int err;
+	int64_t now_ms;
 
 	switch (lv_event_get_code(e)) {
 	case LV_EVENT_LONG_PRESSED:
 		if (k_uptime_get() < volume_hold_enable_at_ms) {
 			break;
 		}
-		show_volume_overlay();
 		volume_hold_active = true;
+		show_volume_overlay(' ');
 		if (indev != NULL) {
 			lv_indev_get_point(indev, &p);
 			volume_hold_last_y = p.y;
@@ -424,25 +525,39 @@ static void hold_volume_event_cb(lv_event_t *e)
 		dy = p.y - volume_hold_last_y;
 
 		while (dy <= -VOLUME_SWIPE_STEP_PX) {
-			if (volume_percent < 100U) {
-				volume_percent = MIN((uint8_t)(volume_percent +
-							    VOLUME_STEP_PERCENT),
-						    100U);
-				show_volume_overlay();
+			now_ms = k_uptime_get();
+			if ((now_ms - last_volume_cmd_ms) < VOLUME_CMD_INTERVAL_MS) {
+				break;
 			}
+
+			err = send_media_usage_command(HID_CONSUMER_VOL_UP);
+			if (err && err != -ENOTCONN) {
+				LOG_WRN("Failed to send HID media command 'vol_up' (err %d)",
+					err);
+				break;
+			}
+
+			last_volume_cmd_ms = now_ms;
+			show_volume_overlay('+');
 			volume_hold_last_y -= VOLUME_SWIPE_STEP_PX;
 			dy += VOLUME_SWIPE_STEP_PX;
 		}
 
 		while (dy >= VOLUME_SWIPE_STEP_PX) {
-			if (volume_percent > 0U) {
-				if (volume_percent > VOLUME_STEP_PERCENT) {
-					volume_percent -= VOLUME_STEP_PERCENT;
-				} else {
-					volume_percent = 0U;
-				}
-				show_volume_overlay();
+			now_ms = k_uptime_get();
+			if ((now_ms - last_volume_cmd_ms) < VOLUME_CMD_INTERVAL_MS) {
+				break;
 			}
+
+			err = send_media_usage_command(HID_CONSUMER_VOL_DOWN);
+			if (err && err != -ENOTCONN) {
+				LOG_WRN("Failed to send HID media command 'vol_down' (err %d)",
+					err);
+				break;
+			}
+
+			last_volume_cmd_ms = now_ms;
+			show_volume_overlay('-');
 			volume_hold_last_y += VOLUME_SWIPE_STEP_PX;
 			dy -= VOLUME_SWIPE_STEP_PX;
 		}
@@ -775,12 +890,43 @@ static void create_music_player_screen(void)
 	add_hold_volume_events(volume_overlay);
 
 	volume_label = lv_label_create(volume_overlay);
-	lv_obj_set_style_text_font(volume_label, &lv_font_montserrat_16,
+	lv_obj_set_style_text_font(volume_label, &lv_font_montserrat_28,
 				   LV_PART_MAIN);
 	lv_obj_set_style_text_color(volume_label, lv_color_hex(0xE7EEFF),
 				    LV_PART_MAIN);
 	lv_obj_center(volume_label);
 	add_hold_volume_events(volume_label);
+
+	pairing_overlay = lv_obj_create(scr);
+	lv_obj_set_size(pairing_overlay, 180, 80);
+	lv_obj_align(pairing_overlay, LV_ALIGN_CENTER, 0, 0);
+	lv_obj_set_style_radius(pairing_overlay, 12, LV_PART_MAIN);
+	lv_obj_set_style_bg_color(pairing_overlay, lv_color_hex(0x000000),
+				  LV_PART_MAIN);
+	lv_obj_set_style_bg_opa(pairing_overlay, LV_OPA_70, LV_PART_MAIN);
+	lv_obj_set_style_border_width(pairing_overlay, 2, LV_PART_MAIN);
+	lv_obj_set_style_border_color(pairing_overlay, lv_color_hex(0xE7EEFF),
+				      LV_PART_MAIN);
+	lv_obj_set_style_pad_all(pairing_overlay, 6, LV_PART_MAIN);
+	lv_obj_remove_flag(pairing_overlay, LV_OBJ_FLAG_SCROLLABLE);
+	lv_obj_add_flag(pairing_overlay, LV_OBJ_FLAG_HIDDEN);
+	lv_obj_add_flag(pairing_overlay, LV_OBJ_FLAG_IGNORE_LAYOUT);
+
+	lv_obj_t *pairing_title_label = lv_label_create(pairing_overlay);
+	lv_label_set_text(pairing_title_label, "Pairing passkey");
+	lv_obj_set_style_text_font(pairing_title_label, &lv_font_montserrat_14,
+				   LV_PART_MAIN);
+	lv_obj_set_style_text_color(pairing_title_label, lv_color_hex(0xDCE8F2),
+				    LV_PART_MAIN);
+	lv_obj_align(pairing_title_label, LV_ALIGN_TOP_MID, 0, 0);
+
+	pairing_passkey_label = lv_label_create(pairing_overlay);
+	lv_label_set_text(pairing_passkey_label, "------");
+	lv_obj_set_style_text_font(pairing_passkey_label, &lv_font_montserrat_28,
+				   LV_PART_MAIN);
+	lv_obj_set_style_text_color(pairing_passkey_label, lv_color_hex(0xE7EEFF),
+				    LV_PART_MAIN);
+	lv_obj_align(pairing_passkey_label, LV_ALIGN_BOTTOM_MID, 0, 0);
 
 	update_song_labels();
 	reset_song_progress();
@@ -824,6 +970,18 @@ int main(void)
 	}
 
 #if HAS_NRF_HIDS
+	err = bt_conn_auth_cb_register(&conn_auth_callbacks);
+	if (err) {
+		LOG_ERR("Failed to register auth callbacks (err %d)", err);
+		return 0;
+	}
+
+	err = bt_conn_auth_info_cb_register(&conn_auth_info_callbacks);
+	if (err) {
+		LOG_ERR("Failed to register auth info callbacks (err %d)", err);
+		return 0;
+	}
+
 	hid_init();
 
 	err = bt_enable(NULL);
@@ -848,6 +1006,7 @@ int main(void)
 
 	lvgl_lock();
 	create_music_player_screen();
+	ui_ready = true;
 #ifndef CONFIG_LV_Z_RUN_LVGL_ON_WORKQUEUE
 	lv_timer_handler();
 #endif
