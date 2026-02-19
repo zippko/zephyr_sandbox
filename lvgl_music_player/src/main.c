@@ -163,6 +163,9 @@ static lv_obj_t *volume_label;
 LV_IMAGE_DECLARE(picture1_bg);
 
 #define RADIAL_MENU_ITEMS_COUNT 6
+#define RADIAL_MENU_ITEM_SIZE 50
+#define RADIAL_MENU_ZOOM_NORMAL 256
+#define RADIAL_MENU_ZOOM_ACTIVE 307
 
 struct radial_menu_item {
 	const char *symbol;
@@ -175,13 +178,14 @@ static const struct radial_menu_item radial_menu_items[RADIAL_MENU_ITEMS_COUNT] 
 	{ LV_SYMBOL_SETTINGS, "Settings" },
 	{ LV_SYMBOL_BLUETOOTH, "Bluetooth" },
 	{ LV_SYMBOL_FILE, "Storage" },
-	{ LV_SYMBOL_POWER, "Power off" },
+	{ LV_SYMBOL_POWER, "Power" },
 };
 
 static lv_obj_t *radial_menu_items_obj[RADIAL_MENU_ITEMS_COUNT];
 static lv_obj_t *radial_menu_symbols_obj[RADIAL_MENU_ITEMS_COUNT];
 static lv_obj_t *radial_menu_center_label;
 static uint8_t radial_menu_active_idx;
+static int32_t radial_menu_item_zoom[RADIAL_MENU_ITEMS_COUNT];
 
 struct song_info {
 	const char *title;
@@ -776,6 +780,11 @@ static void screen_gesture_event_cb(lv_event_t *e)
 	}
 }
 
+static void radial_menu_zoom_exec_cb(void *var, int32_t v)
+{
+	lv_obj_set_style_transform_zoom((lv_obj_t *)var, v, LV_PART_MAIN);
+}
+
 static void radial_menu_refresh(void)
 {
 	static const lv_point_t slots[RADIAL_MENU_ITEMS_COUNT] = {
@@ -789,14 +798,28 @@ static void radial_menu_refresh(void)
 
 	for (size_t i = 0; i < RADIAL_MENU_ITEMS_COUNT; i++) {
 		bool active = (i == radial_menu_active_idx);
+		lv_obj_t *obj = radial_menu_items_obj[i];
+		int32_t from_zoom = radial_menu_item_zoom[i];
+		int32_t to_zoom = active ? RADIAL_MENU_ZOOM_ACTIVE :
+					  RADIAL_MENU_ZOOM_NORMAL;
+		lv_anim_t anim;
 
-		lv_obj_align(radial_menu_items_obj[i], LV_ALIGN_CENTER,
-			     slots[i].x, slots[i].y);
-		lv_obj_set_style_bg_opa(radial_menu_items_obj[i],
-					active ? LV_OPA_80 : LV_OPA_30, LV_PART_MAIN);
-		lv_obj_set_style_border_width(radial_menu_items_obj[i],
-					      active ? 3 : 1, LV_PART_MAIN);
-		lv_obj_set_style_border_color(radial_menu_items_obj[i],
+		lv_anim_init(&anim);
+		lv_anim_set_var(&anim, obj);
+		lv_anim_set_values(&anim, from_zoom, to_zoom);
+		lv_anim_set_time(&anim, 140);
+		lv_anim_set_exec_cb(&anim, radial_menu_zoom_exec_cb);
+		lv_anim_start(&anim);
+		radial_menu_item_zoom[i] = to_zoom;
+
+		lv_obj_align(obj, LV_ALIGN_CENTER, slots[i].x, slots[i].y);
+		lv_obj_set_style_bg_opa(obj,
+					active ? LV_OPA_TRANSP : LV_OPA_30,
+					LV_PART_MAIN);
+		lv_obj_set_style_bg_color(obj, lv_color_hex(0x12202E), LV_PART_MAIN);
+		lv_obj_set_style_border_width(obj,
+					      active ? 1 : 1, LV_PART_MAIN);
+		lv_obj_set_style_border_color(obj,
 					      active ? lv_color_hex(0xE7EEFF) :
 						       lv_color_hex(0x6F839A),
 					      LV_PART_MAIN);
@@ -877,12 +900,17 @@ static void create_default_screen(void)
 
 	for (size_t i = 0; i < RADIAL_MENU_ITEMS_COUNT; i++) {
 		radial_menu_items_obj[i] = lv_obj_create(scr);
-		lv_obj_set_size(radial_menu_items_obj[i], 52, 52);
+		lv_obj_set_size(radial_menu_items_obj[i], RADIAL_MENU_ITEM_SIZE,
+				RADIAL_MENU_ITEM_SIZE);
 		lv_obj_set_style_radius(radial_menu_items_obj[i], LV_RADIUS_CIRCLE,
 					LV_PART_MAIN);
 		lv_obj_set_style_bg_color(radial_menu_items_obj[i],
 					  lv_color_hex(0x12202E), LV_PART_MAIN);
 		lv_obj_set_style_pad_all(radial_menu_items_obj[i], 0, LV_PART_MAIN);
+		lv_obj_set_style_transform_zoom(radial_menu_items_obj[i],
+						RADIAL_MENU_ZOOM_NORMAL,
+						LV_PART_MAIN);
+		radial_menu_item_zoom[i] = RADIAL_MENU_ZOOM_NORMAL;
 		lv_obj_add_flag(radial_menu_items_obj[i], LV_OBJ_FLAG_GESTURE_BUBBLE);
 		lv_obj_remove_flag(radial_menu_items_obj[i], LV_OBJ_FLAG_SCROLLABLE);
 		lv_obj_remove_flag(radial_menu_items_obj[i], LV_OBJ_FLAG_CLICKABLE);
@@ -890,7 +918,7 @@ static void create_default_screen(void)
 		radial_menu_symbols_obj[i] = lv_label_create(radial_menu_items_obj[i]);
 		lv_label_set_text(radial_menu_symbols_obj[i], radial_menu_items[i].symbol);
 		lv_obj_set_style_text_font(radial_menu_symbols_obj[i],
-					   &lv_font_montserrat_28, LV_PART_MAIN);
+					   &lv_font_montserrat_16, LV_PART_MAIN);
 		lv_obj_add_flag(radial_menu_symbols_obj[i], LV_OBJ_FLAG_GESTURE_BUBBLE);
 		lv_obj_center(radial_menu_symbols_obj[i]);
 	}
