@@ -29,8 +29,13 @@ LOG_MODULE_REGISTER(lvgl_music_player, LOG_LEVEL_INF);
 // Use the board's pwm-leds backlight node directly.
 #define BACKLIGHT_NODE DT_NODELABEL(pwm_lcd0)
 
+#if DT_NODE_EXISTS(BACKLIGHT_NODE) && DT_NODE_HAS_STATUS(BACKLIGHT_NODE, okay)
+#define HAS_BACKLIGHT_NODE 1
 static const struct pwm_dt_spec backlight =
 	PWM_DT_SPEC_GET(BACKLIGHT_NODE);
+#else
+#define HAS_BACKLIGHT_NODE 0
+#endif
 
 #define PROGRESS_MAX 100
 #define TIMER_PERIOD_MS 1000
@@ -939,6 +944,7 @@ int main(void)
 	uint32_t backlight_period;
 	int err;
 
+#if HAS_BACKLIGHT_NODE
 	/* Turn on backlight if the board exposes it through pwm-leds. */
 	if (!device_is_ready(backlight.dev)) {
 		LOG_WRN("Backlight PWM device is not ready");
@@ -953,6 +959,9 @@ int main(void)
 			LOG_WRN("Failed to enable backlight PWM");
 		}
 	}
+#else
+	LOG_INF("No pwm_lcd0 backlight node in board definition");
+#endif
 
 	const struct device *display_dev =
 		DEVICE_DT_GET(DT_CHOSEN(zephyr_display));

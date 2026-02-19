@@ -43,7 +43,7 @@ west flash
 
 ## Run Behavior
 - Displays the provided background image at 50% opacity.
-- Shows song title and artist centered on the screen.
+- Shows song title and artist (simulated, not using real metadata from host) centered on the screen.
 - Play icon toggles playback:
   - `Play` -> starts elapsed time and progress arc.
   - Sends BLE HID Consumer Control `Play` command (press + release report).
@@ -63,7 +63,7 @@ west flash
   changes smooth and avoid command bursts.
 - During BLE pairing, passkey is shown in a centered on-screen overlay and is
   hidden when pairing completes, fails, is canceled, or disconnects.
-- Each song has a unique duration (2:00 to 3:00 range, second resolution).
+- Each song has a unique duration (2:00 to 3:00 range, second resolution). All simulated (not using real metadata from host).
 - On track skip:
   - progress resets to `0:00`.
   - if current track was playing, next/previous starts playing immediately.
