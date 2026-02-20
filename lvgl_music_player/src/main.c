@@ -28,7 +28,9 @@ static const struct pwm_dt_spec backlight = PWM_DT_SPEC_GET(BACKLIGHT_NODE);
 
 int main(void)
 {
+#if HAS_BACKLIGHT_NODE
 	uint32_t backlight_period;
+#endif
 	const struct device *display_dev = DEVICE_DT_GET(DT_CHOSEN(zephyr_display));
 	int err;
 
