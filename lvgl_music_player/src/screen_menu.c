@@ -216,6 +216,10 @@ static void default_screen_gesture_event_cb(lv_event_t *e)
 
 	ARG_UNUSED(e);
 
+	if (ui_screens_get_active() != UI_SCREEN_MENU) {
+		return;
+	}
+
 	if (indev == NULL) {
 		return;
 	}
@@ -279,6 +283,7 @@ void ui_screen_menu_build(lv_obj_t *scr, bool clean_first)
 	if (clean_first) {
 		lv_obj_clean(scr);
 	}
+	ui_screens_set_active(UI_SCREEN_MENU);
 	ui_screens_clear_pairing_overlay();
 
 	lv_obj_set_style_bg_color(scr, lv_color_hex(0x000000), LV_PART_MAIN);

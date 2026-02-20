@@ -11,6 +11,7 @@ static ui_bt_is_enabled_cb_t bt_is_enabled_cb;
 static lv_obj_t *pairing_overlay;
 static lv_obj_t *pairing_passkey_label;
 static bool ui_ready;
+static enum ui_screen_id active_screen = UI_SCREEN_MENU;
 
 void ui_screens_init(ui_bt_set_enabled_cb_t set_enabled,
 		     ui_bt_is_enabled_cb_t is_enabled)
@@ -21,6 +22,7 @@ void ui_screens_init(ui_bt_set_enabled_cb_t set_enabled,
 
 void ui_screens_show_default(void)
 {
+	active_screen = UI_SCREEN_MENU;
 	ui_screen_menu_build(lv_screen_active(), true);
 	ui_ready = true;
 }
@@ -73,4 +75,14 @@ void ui_screens_request_bluetooth_enabled(bool enabled)
 	}
 
 	bt_set_enabled_cb(enabled);
+}
+
+void ui_screens_set_active(enum ui_screen_id screen_id)
+{
+	active_screen = screen_id;
+}
+
+enum ui_screen_id ui_screens_get_active(void)
+{
+	return active_screen;
 }

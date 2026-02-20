@@ -34,6 +34,10 @@ static void screen_nav_gesture_event_cb(lv_event_t *e)
 
 	ARG_UNUSED(e);
 
+	if (ui_screens_get_active() != UI_SCREEN_BLUETOOTH) {
+		return;
+	}
+
 	if (indev == NULL) {
 		return;
 	}
@@ -52,6 +56,7 @@ void ui_screen_bluetooth_show(void)
 	lv_obj_t *sw;
 
 	lv_obj_clean(scr);
+	ui_screens_set_active(UI_SCREEN_BLUETOOTH);
 	ui_screens_clear_pairing_overlay();
 
 	lv_obj_set_style_bg_color(scr, lv_color_hex(0x000000), LV_PART_MAIN);

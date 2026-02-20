@@ -444,6 +444,10 @@ static void screen_nav_gesture_event_cb(lv_event_t *e)
 
 	ARG_UNUSED(e);
 
+	if (ui_screens_get_active() != UI_SCREEN_MUSIC_PLAYER) {
+		return;
+	}
+
 	if (indev == NULL) {
 		return;
 	}
@@ -460,6 +464,7 @@ void ui_screen_music_player_show(void)
 	lv_obj_t *separator;
 
 	lv_obj_clean(scr);
+	ui_screens_set_active(UI_SCREEN_MUSIC_PLAYER);
 	lv_obj_set_style_bg_color(scr, lv_color_hex(0x000000), LV_PART_MAIN);
 	lv_obj_set_style_bg_grad_color(scr, lv_color_hex(0x000000), LV_PART_MAIN);
 	lv_obj_set_style_bg_grad_dir(scr, LV_GRAD_DIR_NONE, LV_PART_MAIN);
