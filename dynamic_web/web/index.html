@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="en" data-bs-theme="dark">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Zephyr Dynamic Web</title>
+  <link href="/vendor/bootstrap/css/bootstrap.min.css" rel="stylesheet">
+  <link href="/styles.css" rel="stylesheet">
+</head>
+<body>
+  <main class="container py-4">
+    <div class="row justify-content-center">
+      <div class="col-12 col-md-8 col-lg-6">
+        <div class="card shadow border-0">
+          <div class="card-body">
+            <h1 class="h4 mb-3">Zephyr Wi-Fi Web Server</h1>
+            <p class="text-secondary mb-4">Data below is fetched dynamically from <code>/api/status</code>.</p>
+
+            <dl class="row mb-0">
+              <dt class="col-4">IP Address</dt>
+              <dd class="col-8" id="ip">Loading...</dd>
+
+              <dt class="col-4">SSID</dt>
+              <dd class="col-8" id="ssid">Loading...</dd>
+
+              <dt class="col-4">Uptime</dt>
+              <dd class="col-8" id="uptime">Loading...</dd>
+            </dl>
+
+            <div class="mt-4">
+              <div class="d-flex justify-content-between align-items-center mb-2">
+                <span class="small text-secondary">CPU Utilization</span>
+                <span class="small" id="cpu-load-label">--%</span>
+              </div>
+              <div class="progress" role="progressbar" aria-label="CPU utilization" aria-valuemin="0" aria-valuemax="100">
+                <div id="cpu-load-bar" class="progress-bar bg-info" style="width: 0%">0%</div>
+              </div>
+            </div>
+
+            <div class="mt-3">
+              <div class="d-flex justify-content-between align-items-center mb-2">
+                <span class="small text-secondary">RAM Utilization</span>
+                <span class="small" id="ram-load-label">--%</span>
+              </div>
+              <div class="progress" role="progressbar" aria-label="RAM utilization" aria-valuemin="0" aria-valuemax="100">
+                <div id="ram-load-bar" class="progress-bar bg-warning text-dark" style="width: 0%">0%</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <script src="/vendor/bootstrap/js/bootstrap.bundle.min.js"></script>
+  <script src="/app.js"></script>
+</body>
+</html>

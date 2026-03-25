@@ -1,0 +1,20 @@
+/* Disable display stack for this app on m5stack_core2_procpu. */
+
+&ili9342c {
+	status = "disabled";
+};
+
+&ft5336_touch {
+	status = "disabled";
+};
+
+/ {
+	chosen {
+		/delete-property/ zephyr,display;
+		/delete-property/ zephyr,touch;
+	};
+
+	mipi_dbi {
+		status = "disabled";
+	};
+};

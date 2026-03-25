@@ -1,0 +1,21 @@
+body {
+  background: radial-gradient(circle at top, #1f2937 0%, #0b1220 55%, #05080f 100%);
+  min-height: 100vh;
+  color: #e5e7eb;
+}
+
+.card {
+  border-radius: 1rem;
+  background-color: rgba(17, 24, 39, 0.92);
+  border: 1px solid rgba(148, 163, 184, 0.18);
+}
+
+code {
+  font-size: 0.9em;
+  color: #93c5fd;
+}
+
+.progress {
+  height: 1rem;
+  background-color: rgba(148, 163, 184, 0.2);
+}
