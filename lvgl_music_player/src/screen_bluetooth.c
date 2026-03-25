@@ -5,6 +5,7 @@
 #include <lvgl.h>
 
 #include "screen_menu.h"
+#include "ui_scale.h"
 #include "ui_screens.h"
 
 LV_IMAGE_DECLARE(picture1_bg);
@@ -56,6 +57,7 @@ void ui_screen_bluetooth_show(void)
 	lv_obj_t *sw;
 
 	lv_obj_clean(scr);
+	ui_scale_refresh_for_active_screen();
 	ui_screens_set_active(UI_SCREEN_BLUETOOTH);
 	ui_screens_clear_pairing_overlay();
 
@@ -73,20 +75,21 @@ void ui_screen_bluetooth_show(void)
 	lv_obj_center(bg_img);
 
 	row = lv_obj_create(scr);
-	lv_obj_set_size(row, 160, 56);
-	lv_obj_align(row, LV_ALIGN_CENTER, 0, 8);
-	lv_obj_set_style_radius(row, 14, LV_PART_MAIN);
+	lv_obj_set_size(row, ui_scale_px(160), ui_scale_px(56));
+	lv_obj_align(row, LV_ALIGN_CENTER, 0, ui_scale_px(8));
+	lv_obj_set_style_radius(row, ui_scale_px(14), LV_PART_MAIN);
 	lv_obj_set_style_bg_color(row, lv_color_hex(0x000000), LV_PART_MAIN);
 	lv_obj_set_style_bg_opa(row, LV_OPA_40, LV_PART_MAIN);
-	lv_obj_set_style_border_width(row, 1, LV_PART_MAIN);
+	lv_obj_set_style_border_width(row, ui_scale_px(1), LV_PART_MAIN);
 	lv_obj_set_style_border_color(row, lv_color_hex(0x6F839A), LV_PART_MAIN);
-	lv_obj_set_style_pad_hor(row, 12, LV_PART_MAIN);
-	lv_obj_set_style_pad_ver(row, 10, LV_PART_MAIN);
+	lv_obj_set_style_pad_hor(row, ui_scale_px(12), LV_PART_MAIN);
+	lv_obj_set_style_pad_ver(row, ui_scale_px(10), LV_PART_MAIN);
 	lv_obj_remove_flag(row, LV_OBJ_FLAG_SCROLLABLE);
 
 	label = lv_label_create(row);
 	lv_label_set_text(label, "Bluetooth");
-	lv_obj_set_style_text_font(label, &lv_font_montserrat_14, LV_PART_MAIN);
+	lv_obj_set_style_text_font(label, ui_scale_font_montserrat(14),
+				   LV_PART_MAIN);
 	lv_obj_set_style_text_color(label, lv_color_hex(0xDCE8F2), LV_PART_MAIN);
 	lv_obj_align(label, LV_ALIGN_LEFT_MID, 0, 0);
 

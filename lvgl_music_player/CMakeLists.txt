@@ -14,6 +14,7 @@ project(lvgl_music_player)
 target_sources(app PRIVATE
   src/main.c
   src/bluetooth_ctrl.c
+  src/ui_scale.c
   src/picture1_bg.c
   src/ui_screens.c
   src/screen_menu.c

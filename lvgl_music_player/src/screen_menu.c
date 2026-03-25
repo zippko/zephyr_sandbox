@@ -7,6 +7,7 @@
 
 #include "screen_bluetooth.h"
 #include "screen_music_player.h"
+#include "ui_scale.h"
 #include "ui_screens.h"
 
 LV_IMAGE_DECLARE(picture1_bg);
@@ -151,17 +152,21 @@ static void radial_menu_start_label_animation(uint8_t target_idx)
 
 static void radial_menu_refresh(bool animate_label)
 {
-	static const lv_point_t slots[RADIAL_MENU_ITEMS_COUNT] = {
-		{ 0, -74 },
-		{ 64, -37 },
-		{ 64, 37 },
-		{ 0, 74 },
-		{ -64, 37 },
-		{ -64, -37 },
+	lv_point_t slots[RADIAL_MENU_ITEMS_COUNT] = {
+		{ 0, ui_scale_px(-74) },
+		{ ui_scale_px(64), ui_scale_px(-37) },
+		{ ui_scale_px(64), ui_scale_px(37) },
+		{ 0, ui_scale_px(74) },
+		{ ui_scale_px(-64), ui_scale_px(37) },
+		{ ui_scale_px(-64), ui_scale_px(-37) },
 	};
+	int32_t border_w = ui_scale_px(1);
 
 	if (!radial_menu_is_ready()) {
 		return;
+	}
+	if (border_w < 1) {
+		border_w = 1;
 	}
 
 	for (size_t i = 0; i < RADIAL_MENU_ITEMS_COUNT; i++) {
@@ -184,7 +189,7 @@ static void radial_menu_refresh(bool animate_label)
 		lv_obj_set_style_bg_opa(obj, active ? LV_OPA_TRANSP : LV_OPA_30,
 					LV_PART_MAIN);
 		lv_obj_set_style_bg_color(obj, lv_color_hex(0x12202E), LV_PART_MAIN);
-		lv_obj_set_style_border_width(obj, 1, LV_PART_MAIN);
+		lv_obj_set_style_border_width(obj, border_w, LV_PART_MAIN);
 		lv_obj_set_style_border_color(obj,
 					      active ? lv_color_hex(0xE7EEFF) :
 						       lv_color_hex(0x6F839A),
@@ -279,10 +284,12 @@ void ui_screen_menu_build(lv_obj_t *scr, bool clean_first)
 	lv_obj_t *menu_ring;
 	lv_obj_t *pairing_overlay;
 	lv_obj_t *pairing_passkey_label;
+	int32_t item_size;
 
 	if (clean_first) {
 		lv_obj_clean(scr);
 	}
+	ui_scale_refresh_for_active_screen();
 	ui_screens_set_active(UI_SCREEN_MENU);
 	ui_screens_clear_pairing_overlay();
 
@@ -302,7 +309,7 @@ void ui_screen_menu_build(lv_obj_t *scr, bool clean_first)
 	lv_obj_center(bg_img);
 
 	menu_ring = lv_obj_create(scr);
-	lv_obj_set_size(menu_ring, 200, 200);
+	lv_obj_set_size(menu_ring, ui_scale_px(200), ui_scale_px(200));
 	lv_obj_center(menu_ring);
 	lv_obj_set_style_radius(menu_ring, LV_RADIUS_CIRCLE, LV_PART_MAIN);
 	lv_obj_set_style_bg_opa(menu_ring, LV_OPA_10, LV_PART_MAIN);
@@ -314,9 +321,9 @@ void ui_screen_menu_build(lv_obj_t *scr, bool clean_first)
 	lv_obj_remove_flag(menu_ring, LV_OBJ_FLAG_CLICKABLE);
 
 	for (size_t i = 0; i < RADIAL_MENU_ITEMS_COUNT; i++) {
+		item_size = ui_scale_px(RADIAL_MENU_ITEM_SIZE);
 		radial_menu_items_obj[i] = lv_obj_create(scr);
-		lv_obj_set_size(radial_menu_items_obj[i], RADIAL_MENU_ITEM_SIZE,
-				RADIAL_MENU_ITEM_SIZE);
+		lv_obj_set_size(radial_menu_items_obj[i], item_size, item_size);
 		lv_obj_set_style_radius(radial_menu_items_obj[i], LV_RADIUS_CIRCLE,
 					LV_PART_MAIN);
 		lv_obj_set_style_bg_color(radial_menu_items_obj[i],
@@ -334,17 +341,18 @@ void ui_screen_menu_build(lv_obj_t *scr, bool clean_first)
 		radial_menu_symbols_obj[i] = lv_label_create(radial_menu_items_obj[i]);
 		lv_label_set_text(radial_menu_symbols_obj[i], radial_menu_items[i].symbol);
 		lv_obj_set_style_text_font(radial_menu_symbols_obj[i],
-					   &lv_font_montserrat_16, LV_PART_MAIN);
+					   ui_scale_font_montserrat(16),
+					   LV_PART_MAIN);
 		lv_obj_add_flag(radial_menu_symbols_obj[i], LV_OBJ_FLAG_GESTURE_BUBBLE);
 		lv_obj_center(radial_menu_symbols_obj[i]);
 	}
 
 	radial_menu_center_label = lv_label_create(scr);
-	lv_obj_set_style_text_font(radial_menu_center_label, &lv_font_montserrat_16,
-				   LV_PART_MAIN);
+	lv_obj_set_style_text_font(radial_menu_center_label,
+				   ui_scale_font_montserrat(16), LV_PART_MAIN);
 	lv_obj_set_style_text_color(radial_menu_center_label, lv_color_hex(0xF0F4F8),
 				    LV_PART_MAIN);
-	lv_obj_align(radial_menu_center_label, LV_ALIGN_CENTER, 0, 2);
+	lv_obj_align(radial_menu_center_label, LV_ALIGN_CENTER, 0, ui_scale_px(2));
 
 	if (radial_menu_active_idx >= RADIAL_MENU_ITEMS_COUNT) {
 		radial_menu_active_idx = 0;
@@ -353,23 +361,23 @@ void ui_screen_menu_build(lv_obj_t *scr, bool clean_first)
 	radial_menu_refresh(false);
 
 	pairing_overlay = lv_obj_create(scr);
-	lv_obj_set_size(pairing_overlay, 180, 80);
+	lv_obj_set_size(pairing_overlay, ui_scale_px(180), ui_scale_px(80));
 	lv_obj_align(pairing_overlay, LV_ALIGN_CENTER, 0, 0);
-	lv_obj_set_style_radius(pairing_overlay, 12, LV_PART_MAIN);
+	lv_obj_set_style_radius(pairing_overlay, ui_scale_px(12), LV_PART_MAIN);
 	lv_obj_set_style_bg_color(pairing_overlay, lv_color_hex(0x000000),
 				  LV_PART_MAIN);
 	lv_obj_set_style_bg_opa(pairing_overlay, LV_OPA_70, LV_PART_MAIN);
-	lv_obj_set_style_border_width(pairing_overlay, 2, LV_PART_MAIN);
+	lv_obj_set_style_border_width(pairing_overlay, ui_scale_px(2), LV_PART_MAIN);
 	lv_obj_set_style_border_color(pairing_overlay, lv_color_hex(0xE7EEFF),
 				      LV_PART_MAIN);
-	lv_obj_set_style_pad_all(pairing_overlay, 6, LV_PART_MAIN);
+	lv_obj_set_style_pad_all(pairing_overlay, ui_scale_px(6), LV_PART_MAIN);
 	lv_obj_remove_flag(pairing_overlay, LV_OBJ_FLAG_SCROLLABLE);
 	lv_obj_add_flag(pairing_overlay, LV_OBJ_FLAG_HIDDEN);
 	lv_obj_add_flag(pairing_overlay, LV_OBJ_FLAG_IGNORE_LAYOUT);
 
 	lv_obj_t *pairing_title_label = lv_label_create(pairing_overlay);
 	lv_label_set_text(pairing_title_label, "Pairing passkey");
-	lv_obj_set_style_text_font(pairing_title_label, &lv_font_montserrat_14,
+	lv_obj_set_style_text_font(pairing_title_label, ui_scale_font_montserrat(14),
 				   LV_PART_MAIN);
 	lv_obj_set_style_text_color(pairing_title_label, lv_color_hex(0xDCE8F2),
 				    LV_PART_MAIN);
@@ -377,7 +385,7 @@ void ui_screen_menu_build(lv_obj_t *scr, bool clean_first)
 
 	pairing_passkey_label = lv_label_create(pairing_overlay);
 	lv_label_set_text(pairing_passkey_label, "------");
-	lv_obj_set_style_text_font(pairing_passkey_label, &lv_font_montserrat_28,
+	lv_obj_set_style_text_font(pairing_passkey_label, ui_scale_font_montserrat(28),
 				   LV_PART_MAIN);
 	lv_obj_set_style_text_color(pairing_passkey_label, lv_color_hex(0xE7EEFF),
 				    LV_PART_MAIN);

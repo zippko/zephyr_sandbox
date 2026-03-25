@@ -5,6 +5,7 @@
 #include <lvgl_zephyr.h>
 
 #include "screen_menu.h"
+#include "ui_scale.h"
 
 static ui_bt_set_enabled_cb_t bt_set_enabled_cb;
 static ui_bt_is_enabled_cb_t bt_is_enabled_cb;
@@ -29,24 +30,29 @@ static void pairing_overlay_create_on_active_screen(void)
 {
 	lv_obj_t *scr = lv_screen_active();
 	lv_obj_t *title_label;
+	int32_t border_w = ui_scale_px(2);
+
+	if (border_w < 1) {
+		border_w = 1;
+	}
 
 	pairing_overlay = lv_obj_create(scr);
-	lv_obj_set_size(pairing_overlay, 180, 80);
+	lv_obj_set_size(pairing_overlay, ui_scale_px(180), ui_scale_px(80));
 	lv_obj_align(pairing_overlay, LV_ALIGN_CENTER, 0, 0);
-	lv_obj_set_style_radius(pairing_overlay, 12, LV_PART_MAIN);
+	lv_obj_set_style_radius(pairing_overlay, ui_scale_px(12), LV_PART_MAIN);
 	lv_obj_set_style_bg_color(pairing_overlay, lv_color_hex(0x000000),
 				  LV_PART_MAIN);
 	lv_obj_set_style_bg_opa(pairing_overlay, LV_OPA_70, LV_PART_MAIN);
-	lv_obj_set_style_border_width(pairing_overlay, 2, LV_PART_MAIN);
+	lv_obj_set_style_border_width(pairing_overlay, border_w, LV_PART_MAIN);
 	lv_obj_set_style_border_color(pairing_overlay, lv_color_hex(0xE7EEFF),
 				      LV_PART_MAIN);
-	lv_obj_set_style_pad_all(pairing_overlay, 6, LV_PART_MAIN);
+	lv_obj_set_style_pad_all(pairing_overlay, ui_scale_px(6), LV_PART_MAIN);
 	lv_obj_remove_flag(pairing_overlay, LV_OBJ_FLAG_SCROLLABLE);
 	lv_obj_add_flag(pairing_overlay, LV_OBJ_FLAG_IGNORE_LAYOUT);
 
 	title_label = lv_label_create(pairing_overlay);
 	lv_label_set_text(title_label, "Pairing passkey");
-	lv_obj_set_style_text_font(title_label, &lv_font_montserrat_14,
+	lv_obj_set_style_text_font(title_label, ui_scale_font_montserrat(14),
 				   LV_PART_MAIN);
 	lv_obj_set_style_text_color(title_label, lv_color_hex(0xDCE8F2),
 				    LV_PART_MAIN);
@@ -54,7 +60,8 @@ static void pairing_overlay_create_on_active_screen(void)
 
 	pairing_passkey_label = lv_label_create(pairing_overlay);
 	lv_label_set_text(pairing_passkey_label, "------");
-	lv_obj_set_style_text_font(pairing_passkey_label, &lv_font_montserrat_28,
+	lv_obj_set_style_text_font(pairing_passkey_label,
+				   ui_scale_font_montserrat(28),
 				   LV_PART_MAIN);
 	lv_obj_set_style_text_color(pairing_passkey_label, lv_color_hex(0xE7EEFF),
 				    LV_PART_MAIN);
@@ -85,6 +92,7 @@ void ui_screens_show_pairing_passkey(unsigned int passkey)
 	if (!pairing_overlay_is_valid()) {
 		pairing_overlay = NULL;
 		pairing_passkey_label = NULL;
+		ui_scale_refresh_for_active_screen();
 		pairing_overlay_create_on_active_screen();
 	}
 	lv_label_set_text_fmt(pairing_passkey_label, "%06u", passkey);
