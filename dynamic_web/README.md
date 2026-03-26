@@ -50,11 +50,25 @@ Configured in `Kconfig` (`APP_WEB_CONTENT_SOURCE` choice):
   - Server serves static files directly from firmware image.
   - No LittleFS mount/sync required for website serving.
 
-Current `prj.conf` is set to firmware mode.
+Current `prj.conf` is set to filesystem mode.
 
 ## Compression and Storage Notes
 - Bootstrap vendor assets are embedded as gzip and served with gzip encoding.
 - In filesystem mode, files are written under `/lfs/www/vendor/bootstrap/...`.
+- [AuTerm](https://github.com/thedjnK/AuTerm/) on Windows 11 was used to test MCUmgr functionality and option to download and upload files from filesystem.
+
+## MCUmgr File Updates
+- Filesystem management over MCUmgr is enabled with:
+  - `CONFIG_MCUMGR_GRP_FS=y`
+  - `CONFIG_MCUMGR_TRANSPORT_SHELL=y`
+- Current shell transport tuning in `prj.conf`:
+  - `CONFIG_MCUMGR_TRANSPORT_NETBUF_COUNT=8`
+  - `CONFIG_MCUMGR_TRANSPORT_NETBUF_SIZE=1024`
+  - `CONFIG_MCUMGR_TRANSPORT_SHELL_MTU=512`
+  - `CONFIG_MCUMGR_TRANSPORT_SHELL_RX_BUF_COUNT=4`
+  - `CONFIG_MCUMGR_TRANSPORT_SHELL_INPUT_TIMEOUT=y`
+  - `CONFIG_MCUMGR_TRANSPORT_SHELL_INPUT_TIMEOUT_TIME=10000`
+  - `CONFIG_MCUMGR_TRANSPORT_WORKQUEUE_STACK_SIZE=3072`
 
 ## Exposed Routes
 - `/` -> main page
