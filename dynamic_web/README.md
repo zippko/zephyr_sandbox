@@ -8,7 +8,7 @@ Zephyr app that:
 - serves a Bootstrap 5.3 web UI,
 - exposes runtime status (`IP`, `SSID`, `uptime`, `CPU%`, `RAM%`).
 
-![Website](assets/wesbite.png)
+![Website](assets/website.png)
 
 ## Environment
 | Tool                 | Version |  
