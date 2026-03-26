@@ -1,11 +1,25 @@
 # dynamic_web
 
+## Purpose
 Zephyr app that:
 - connects to Wi-Fi using credentials in `src/wifi_secrets.h` (git-ignored),
 - gets IPv4 via DHCP,
 - runs an HTTP server,
 - serves a Bootstrap 5.3 web UI,
 - exposes runtime status (`IP`, `SSID`, `uptime`, `CPU%`, `RAM%`).
+
+![Website](assets/wesbite.png)
+
+## Environment
+| Tool                 | Version |  
+| --------             | ------- |
+| Zephyr               | 4.3.0 |
+| Zephyr SDK           | zephyr-sdk-0.17.4 |
+| VS Code              | 1.112.0 |
+| Workbench for Zephyr | 2.6.2 |
+
+## Hardware
+M5 Stack Core2.
 
 ## Project Layout
 - `src/main.c`: app orchestration.
@@ -55,7 +69,6 @@ Current `prj.conf` is set to filesystem mode.
 ## Compression and Storage Notes
 - Bootstrap vendor assets are embedded as gzip and served with gzip encoding.
 - In filesystem mode, files are written under `/lfs/www/vendor/bootstrap/...`.
-- [AuTerm](https://github.com/thedjnK/AuTerm/) on Windows 11 was used to test MCUmgr functionality and option to download and upload files from filesystem.
 
 ## MCUmgr File Updates
 - Filesystem management over MCUmgr is enabled with:
@@ -69,6 +82,7 @@ Current `prj.conf` is set to filesystem mode.
   - `CONFIG_MCUMGR_TRANSPORT_SHELL_INPUT_TIMEOUT=y`
   - `CONFIG_MCUMGR_TRANSPORT_SHELL_INPUT_TIMEOUT_TIME=10000`
   - `CONFIG_MCUMGR_TRANSPORT_WORKQUEUE_STACK_SIZE=3072`
+- [AuTerm](https://github.com/thedjnK/AuTerm/) on Windows 11 was used to test MCUmgr functionality and option to download and upload files from filesystem.
 
 ## Exposed Routes
 - `/` -> main page
