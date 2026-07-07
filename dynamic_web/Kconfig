@@ -1,0 +1,27 @@
+source "Kconfig.zephyr"
+
+menu "dynamic_web options"
+
+choice APP_WEB_CONTENT_SOURCE
+	prompt "Web content source"
+	default APP_WEB_CONTENT_FROM_FILESYSTEM
+
+config APP_WEB_CONTENT_FROM_FILESYSTEM
+	bool "Serve web files from LittleFS (/lfs/www)"
+
+config APP_WEB_CONTENT_FROM_FIRMWARE
+	bool "Serve web files directly from firmware image"
+
+endchoice
+
+config APP_SYNC_WEB_FILES_ON_BOOT
+	bool "Sync embedded web files to LittleFS at boot"
+	default y
+	depends on APP_WEB_CONTENT_FROM_FILESYSTEM
+	help
+	  When enabled, website assets embedded in firmware are written
+	  to /lfs/www on each boot. Disable this if you plan to update
+	  files directly in LittleFS (e.g. via mcumgr) and want to keep
+	  those changes across reboot.
+
+endmenu
