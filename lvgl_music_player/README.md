@@ -6,6 +6,8 @@ play/pause, previous/next track selection, per-track duration, circular
 progress visualization, and BLE HID Consumer Control output for Windows media
 control.
 
+![Demo](assets/lvgl_music_player.gif)
+
 ## Architecture
 - UI and player state are implemented in `src/main.c`.
 - Background image is embedded as an LVGL image descriptor in `src/picture1_bg.c`.
